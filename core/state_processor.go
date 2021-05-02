@@ -17,6 +17,7 @@
 package core
 
 import (
+	"bytes"
 	"fmt"
 	"math/big"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/teller"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -91,16 +93,78 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 	return receipts, allLogs, *usedGas, nil
 }
+func replayTransaction(msg types.Message, txContext vm.TxContext,
+	blockContext vm.BlockContext, statedb *state.StateDB,
+	gasLeft uint64, execResult *ExecutionResult, mutateMap *teller.MutateMap) {
+	gp := new(GasPool).AddGas(gasLeft)
+	config := vm.Config{
+		Debug: true,
+		// Tracer: tracer,
+	}
+	evm := vm.NewTellerEVM(blockContext, txContext, statedb, params.MainnetChainConfig, config, true)
+	evm.Reset(txContext, statedb)
+	// evm.Teller.SetMutateMap(mutateMap)
+	result, err := ApplyMessage(evm, msg, gp)
+
+	if err != nil {
+		fmt.Printf("Error when replaying tx: %s %v\n", txContext.Hash.Hex(), err)
+		fmt.Println("Different from the original result", execResult, gasLeft)
+		return
+	}
+	// tracerResult, err := tracer.GetResult()
+	// if err != nil {
+	// 	fmt.Printf("error when getting result from the tracer.")
+	// }
+	// evm.Teller.LogDetail(tracerResult, txContext.Hash)
+
+	if evm.Teller.Mutated() {
+		var errMsg string
+		if execResult.Err != nil {
+			errMsg = execResult.Err.Error()
+		}
+		mutailDetail := teller.MutateDetail{
+			IsDifference: bytes.Compare(result.ReturnData, execResult.ReturnData) != 0,
+			TxStatus:     execResult.Err == nil,
+			TxErrMsg:     errMsg,
+		}
+		evm.Teller.InsertMutateState(txContext.Hash, mutailDetail)
+
+		// if bytes.Compare(result.ReturnData, execResult.ReturnData) == 0 {
+		// 	fmt.Printf("No different: %s\n", txContext.Hash.Hex())
+		// } else {
+		// 	fmt.Printf("Different: %s\n", txContext.Hash.Hex())
+		// }
+		// if result.Err != execResult.Err {
+		// 	fmt.Println("Different: ", result.Err, execResult.Err)
+		// }
+	} else {
+		evm.Teller.InsertMutateState(txContext.Hash, teller.MutateDetail{
+			IsDifference: false,
+			TxStatus:     !execResult.Failed(),
+		})
+	}
+}
 
 func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM) (*types.Receipt, error) {
 	// Create a new context to be used in the EVM environment.
-	txContext := NewEVMTxContext(msg)
+	// txContext := NewEVMTxContext(msg)
+	txContext := NewEVMDebugTxContext(msg, tx)
+	cpstate := statedb.Copy()
 	evm.Reset(txContext, statedb)
 
 	// Apply the transaction to the current state (included in the env).
 	result, err := ApplyMessage(evm, msg, gp)
 	if err != nil {
 		return nil, err
+	}
+
+	if evm.Teller != nil && evm.Teller.IsFound() {
+		// free the tx info cache from memory
+		evm.Teller.EndTx(txContext.Hash)
+		// replayTransaction in a cloned env
+		replayTransaction(msg, txContext, evm.Context, cpstate,
+			gp.Gas()+result.UsedGas, result, nil)
+		evm.Teller.EndTx(txContext.Hash)
 	}
 
 	// Update the state with pending changes.
@@ -149,5 +213,6 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	// Create a new context to be used in the EVM environment
 	blockContext := NewEVMBlockContext(header, bc, author)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, config, cfg)
+	// vmenv := vm.NewTellerEVM(blockContext, vm.TxContext{}, statedb, config, cfg, false)
 	return applyTransaction(msg, config, bc, author, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv)
 }

@@ -116,7 +116,11 @@ func NewEVMInterpreter(evm *EVM, cfg Config) *EVMInterpreter {
 // considered a revert-and-consume-all-gas operation except for
 // ErrExecutionReverted which means revert-and-keep-gas-left.
 func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (ret []byte, err error) {
-
+	if in.evm.Teller != nil && !in.evm.Teller.IsMutate() {
+		in.evm.Teller.CheckAndLog(
+			contract.CallerAddress, contract.Address(), input,
+			in.evm.TxContext.Hash, in.evm.TxContext.Origin, in.evm.Context.BlockNumber.Int64())
+	}
 	// Increment the call depth which is restricted to 1024
 	in.evm.depth++
 	defer func() { in.evm.depth-- }()
@@ -271,6 +275,13 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		case operation.reverts:
 			return res, ErrExecutionReverted
 		case operation.halts:
+
+			if in.evm.Teller != nil {
+				res = in.evm.Teller.CheckAndMutate(
+					res, contract.CallerAddress, contract.Address(), input,
+					in.evm.TxContext.Hash, in.evm.TxContext.Origin, in.evm.Context.BlockNumber.Int64())
+				return res, nil
+			}
 			return res, nil
 		case !operation.jumps:
 			pc++
