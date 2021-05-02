@@ -1526,7 +1526,16 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 					bc.triegc.Push(root, number)
 					break
 				}
-				triedb.Dereference(root.(common.Hash))
+				blockNumber := -number
+
+				if blockNumber > 11000000 {
+					// log.Info("skip dereference block", "block", blockNumber, "root", root.(common.Hash).Hex())
+				} else {
+					if blockNumber%1000 == 0 {
+						log.Info("dereferencing block", "block", blockNumber, "root", root.(common.Hash).Hex())
+					}
+					triedb.Dereference(root.(common.Hash))
+				}
 			}
 		}
 	}
