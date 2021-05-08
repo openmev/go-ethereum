@@ -17,7 +17,6 @@
 package vm
 
 import (
-	"fmt"
 	"hash"
 	"sync/atomic"
 
@@ -118,7 +117,6 @@ func NewEVMInterpreter(evm *EVM, cfg Config) *EVMInterpreter {
 // ErrExecutionReverted which means revert-and-keep-gas-left.
 func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (ret []byte, err error) {
 	if in.evm.Teller != nil && !in.evm.Teller.IsMutate() {
-		fmt.Println("teller is not nill")
 		in.evm.Teller.CheckAndLog(
 			contract.CallerAddress, contract.Address(), input,
 			in.evm.TxContext.Hash, in.evm.TxContext.Origin, in.evm.Context.BlockNumber.Int64())

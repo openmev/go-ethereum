@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"math"
 	"math/big"
 	"strings"
@@ -160,7 +159,6 @@ func (t *tellerCore) checkAndLog(
 	caller common.Address, callee common.Address, input []byte,
 	txHash common.Hash, txOrigin common.Address, blockNumber int64) bool {
 	isFound := false
-	fmt.Println("checking and log")
 	for _, w := range t.WatchList {
 		if breakPointType, isMatch := w.Match(callee, input); isMatch {
 			if _, ok := t.txInfoCache[txHash.Hex()]; !ok {

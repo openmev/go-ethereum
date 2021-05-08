@@ -98,7 +98,7 @@ func replayTransaction(msg types.Message, txContext vm.TxContext,
 	gasLeft uint64, execResult *ExecutionResult, mutateMap *teller.MutateMap) {
 	gp := new(GasPool).AddGas(gasLeft)
 	config := vm.Config{
-		Debug: true,
+		Debug: false,
 		// Tracer: tracer,
 	}
 	evm := vm.NewTellerEVM(blockContext, txContext, statedb, params.MainnetChainConfig, config, true)

@@ -84,7 +84,8 @@ func (t *tellerCore) mutateKyberGetExpectedRate(res []byte, caller common.Addres
 				}
 			}
 		}
-		return false, nil
+		rate, _ := big.NewFloat(0).SetString("1.05")
+		return true, rate
 	}
 
 	if inputArgs, err := decodeInputHelper(kyber_network_abi, input); err == nil {
