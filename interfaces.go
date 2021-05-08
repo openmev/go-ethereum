@@ -125,6 +125,10 @@ type CallMsg struct {
 	AccessList types.AccessList // EIP-2930 access list.
 }
 
+func (c CallMsg) SetData(data []byte) {
+
+}
+
 // A ContractCaller provides contract calls, essentially transactions that are executed by
 // the EVM but not mined into the blockchain. ContractCall is a low-level method to
 // execute such calls. For applications which are structured around specific contracts,
