@@ -271,7 +271,9 @@ func mulFloat(a *big.Int, rate *big.Float) *big.Int {
 	denominator := math.Pow10(precision)
 	rateInt, _ := rate.Mul(rate, big.NewFloat(denominator)).Int64()
 	mul := big.NewInt(rateInt)
+
 	a = a.Mul(a, mul)
+	a = a.Div(a, big.NewInt(int64(denominator)))
 	return a
 }
 
@@ -311,8 +313,22 @@ func (t *tellerCore) checkAndMutate(res []byte, caller common.Address, callee co
 			return t.mutateCalcWithdrawOneCoin(res, caller, callee, input)
 		}
 
+		// calc_withdraw_one_coin(uint256,int128)
+		if bytes.Equal(input[:4], common.FromHex("0xcc2b27d7")) {
+			return t.mutateCalcWithdrawOneCoinStableSwap(res, caller, callee, input)
+		}
+
+		// calc_token_amount(uint256[2], bool)
+		if bytes.Equal(input[:4], common.FromHex("0xed8e84f3")) {
+			return t.mutateCalcTokenAmount(res, caller, callee, input)
+		}
+
+		// calc_token_amount(uint256[3], bool)
+		if bytes.Equal(input[:4], common.FromHex("0x3883e119")) {
+			return t.mutateCalcTokenAmount3Crv(res, callee, callee, input)
+		}
 		// calc_token_amount(address,uint256[4],bool)
-		if bytes.Equal(input[:4], common.FromHex("861cdef0")) {
+		if bytes.Equal(input[:4], common.FromHex("0x861cdef0")) {
 			// we simply use calWithdrawOneCoin as its the same
 			return t.mutateCalcWithdrawOneCoin(res, caller, callee, input)
 		}

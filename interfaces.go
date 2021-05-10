@@ -126,7 +126,6 @@ type CallMsg struct {
 }
 
 func (c CallMsg) SetData(data []byte) {
-
 }
 
 // A ContractCaller provides contract calls, essentially transactions that are executed by

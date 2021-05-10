@@ -20,9 +20,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"os"
 	"runtime"
 	"sync"
@@ -160,6 +162,7 @@ type TraceConfig struct {
 	Tracer  *string
 	Timeout *string
 	Reexec  *uint64
+	Mutate  *bool
 }
 
 // TraceCallConfig is the config for traceCall API. It holds one more
@@ -736,8 +739,35 @@ func (api *API) MutateTraceTransaction(ctx context.Context, hash common.Hash, co
 		// if err != nil {
 		// 	return nil, err
 		// }
-		msg.SetData(common.FromHex(*inputData))
+		msg = types.NewMessage(
+			msg.From(), msg.To(), msg.Nonce(),
+			msg.Value(),
+			uint64(17000000),
+			// msg.Gas(),
+			big.NewInt(0),
+			// msg.GasPrice(),
+			common.FromHex(*inputData),
+			msg.AccessList(), msg.CheckNonce(),
+		)
+	} else {
+		msg = types.NewMessage(
+			msg.From(), msg.To(), msg.Nonce(),
+			msg.Value(),
+			uint64(17000000),
+			// msg.Gas(),
+			big.NewInt(0),
+			// msg.GasPrice(),
+			msg.Data(),
+			msg.AccessList(), msg.CheckNonce(),
+		)
 	}
+	fmt.Println("input Data", inputData)
+	fmt.Println("input", msg.Data(), hex.Dump(msg.Data()))
+	isMutate := true
+	if config == nil {
+		config = &TraceConfig{}
+	}
+	config.Mutate = &isMutate
 	txctx := &txTraceContext{
 		index: int(index),
 		hash:  hash,
@@ -875,6 +905,14 @@ func (api *API) traceTx(ctx context.Context, message core.Message, txctx *Contex
 	vmenv := vm.NewTellerEVM(vmctx, txContext, statedb, api.backend.ChainConfig(), vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true}, true)
 	vmenv.Teller.SetMutateMapList(mutateMapList)
 
+	if config != nil && config.Mutate != nil && *config.Mutate {
+		vmenv = vm.NewTellerEVM(vmctx, txContext, statedb, api.backend.ChainConfig(), vm.Config{Debug: true, Tracer: tracer}, true)
+		vmenv.Teller.SetMutateMapList(mutateMapList)
+	} else {
+		// Run the transaction with tracing enabled.
+		vmenv = vm.NewEVM(vmctx, txContext, statedb, api.backend.ChainConfig(), vm.Config{Debug: true, Tracer: tracer})
+
+	}
 	// Call Prepare to clear out the statedb access list
 	statedb.Prepare(txctx.TxHash, txctx.TxIndex)
 

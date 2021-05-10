@@ -20,7 +20,7 @@ func (t *tellerCore) mutateInverseCalcWithdrawOneCoin(res []byte, caller common.
 		}
 
 		if !isMatch {
-			fmt.Println("skip this because the caller does not match", callee.Hex())
+			// fmt.Println("skip this because the caller does not match", callee.Hex())
 			return res, false
 		}
 	}
@@ -33,6 +33,75 @@ func (t *tellerCore) mutateInverseCalcWithdrawOneCoin(res []byte, caller common.
 			amount = quoFloat(amount, rate)
 			args[0] = amount
 			if res, err := encodeHelper(crv_deposit_abi, input[:4], args); err == nil {
+				return res, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func (t *tellerCore) mutateCalcTokenAmount3Crv(res []byte, caller common.Address, callee common.Address, input []byte) (ret []byte, isMutate bool) {
+	//calc_token_amount
+	mutateRate := "1"
+	if t.mutateMapList != nil {
+		isMatch := false
+		for _, mutateMap := range *t.mutateMapList {
+			if mutateMap.Address.Hex() == callee.Hex() {
+				isMatch = true
+				mutateRate = mutateMap.Rate
+				break
+			}
+		}
+
+		if !isMatch {
+			// fmt.Println("skip this because the caller does not match", callee.Hex())
+			return res, false
+		}
+	}
+	if ret, err := DecodeHelper(crv3_stable_swap_abi, input[:4], res); err == nil {
+		args := ret.([]interface{})
+		amount, ok := args[0].(*big.Int)
+		fmt.Println("before mutate", amount)
+		if ok && mutateRate != "1" {
+			rate, _ := big.NewFloat(0).SetString(mutateRate)
+			amount = mulFloat(amount, rate)
+
+			args[0] = amount
+			if res, err := encodeHelper(crv3_stable_swap_abi, input[:4], args); err == nil {
+				fmt.Println("after mutate", amount)
+				return res, true
+			}
+		}
+	}
+	return res, false
+}
+
+func (t *tellerCore) mutateCalcTokenAmount(res []byte, caller common.Address, callee common.Address, input []byte) (ret []byte, isMutate bool) {
+	//calc_token_amount
+	mutateRate := "1"
+	if t.mutateMapList != nil {
+		isMatch := false
+		for _, mutateMap := range *t.mutateMapList {
+			if mutateMap.Address.Hex() == callee.Hex() {
+				isMatch = true
+				mutateRate = mutateMap.Rate
+				break
+			}
+		}
+
+		if !isMatch {
+			// fmt.Println("skip this because the caller does not match", callee.Hex())
+			return res, false
+		}
+	}
+	if ret, err := DecodeHelper(crv_stable_swap_abi, input[:4], res); err == nil {
+		args := ret.([]interface{})
+		amount, ok := args[0].(*big.Int)
+		if ok && mutateRate != "1" {
+			rate, _ := big.NewFloat(0).SetString(mutateRate)
+			amount = mulFloat(amount, rate)
+			args[0] = amount
+			if res, err := encodeHelper(crv_stable_swap_abi, input[:4], args); err == nil {
 				return res, true
 			}
 		}
@@ -53,7 +122,7 @@ func (t *tellerCore) mutateEthToTokenInputPrice(res []byte, caller common.Addres
 		}
 
 		if !isMatch {
-			fmt.Println("skip this because the caller does not match", callee.Hex())
+			// fmt.Println("skip this because the caller does not match", callee.Hex())
 			return res, false
 		}
 	}
@@ -85,7 +154,7 @@ func (t *tellerCore) mutateKyberGetExpectedRate(res []byte, caller common.Addres
 			}
 		}
 		rate, _ := big.NewFloat(0).SetString("1.05")
-		return true, rate
+		return false, rate
 	}
 
 	if inputArgs, err := decodeInputHelper(kyber_network_abi, input); err == nil {
@@ -128,7 +197,7 @@ func (t *tellerCore) mutateTokenToEthInputPrice(res []byte, caller common.Addres
 		}
 
 		if !isMatch {
-			fmt.Println("skip this because the caller does not match", callee.Hex())
+			// fmt.Println("skip this because the caller does not match", callee.Hex())
 			return res, false
 		}
 	}
@@ -149,6 +218,44 @@ func (t *tellerCore) mutateTokenToEthInputPrice(res []byte, caller common.Addres
 	return res, false
 }
 
+func (t *tellerCore) mutateCalcWithdrawOneCoinStableSwap(res []byte, caller common.Address, callee common.Address, input []byte) (ret []byte, isMutate bool) {
+	mutateRate := "1"
+	if t.mutateMapList != nil {
+		isMatch := false
+		for _, mutateMap := range *t.mutateMapList {
+			if mutateMap.Address.Hex() == callee.Hex() {
+				isMatch = true
+				mutateRate = mutateMap.Rate
+				break
+			}
+		}
+
+		if !isMatch {
+			// fmt.Println("skip this because the caller does not match", callee.Hex())
+			return res, false
+		}
+	}
+	fmt.Println("mutate calc withdraw one coin", caller.Hex(), mutateRate)
+
+	if ret, err := DecodeHelper(crv_stable_swap_abi, input[:4], res); err == nil {
+		args := ret.([]interface{})
+		amount, ok := args[0].(*big.Int)
+		fmt.Println("current amount", amount)
+		if ok && mutateRate != "1" {
+			rate, _ := big.NewFloat(0).SetString(mutateRate)
+			amount = mulFloat(amount, rate)
+			args[0] = amount
+			if res, err := encodeHelper(crv_stable_swap_abi, input[:4], args); err == nil {
+				fmt.Println("after mutate", amount, "rate", rate)
+				return res, true
+			} else {
+				fmt.Println("error", err)
+			}
+		}
+	}
+	return res, false
+}
+
 func (t *tellerCore) mutateCalcWithdrawOneCoin(res []byte, caller common.Address, callee common.Address, input []byte) (ret []byte, isMutate bool) {
 	mutateRate := "1"
 	if t.mutateMapList != nil {
@@ -162,19 +269,22 @@ func (t *tellerCore) mutateCalcWithdrawOneCoin(res []byte, caller common.Address
 		}
 
 		if !isMatch {
-			fmt.Println("skip this because the caller does not match", callee.Hex())
+			// fmt.Println("skip this because the caller does not match", callee.Hex())
 			return res, false
 		}
 	}
+	fmt.Println("mutate calc withdraw one coin", caller.Hex(), mutateRate)
 
 	if ret, err := DecodeHelper(crv_deposit_abi, input[:4], res); err == nil {
 		args := ret.([]interface{})
 		amount, ok := args[0].(*big.Int)
+		fmt.Println("current amount", amount)
 		if ok && mutateRate != "1" {
 			rate, _ := big.NewFloat(0).SetString(mutateRate)
 			amount = mulFloat(amount, rate)
 			args[0] = amount
 			if res, err := encodeHelper(crv_deposit_abi, input[:4], args); err == nil {
+				fmt.Println("after mutate", amount)
 				return res, true
 			}
 		}
@@ -195,7 +305,7 @@ func (t *tellerCore) mutateGetReserve(res []byte, caller common.Address, callee 
 		}
 
 		if !isMatch {
-			fmt.Println("skip this because the caller does not match", callee.Hex())
+			// fmt.Println("skip this because the caller does not match", callee.Hex())
 			return res, false
 		}
 	}
