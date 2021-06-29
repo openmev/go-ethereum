@@ -5,7 +5,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"gorm.io/gorm"
 )
 
 type Teller struct {
@@ -26,16 +25,8 @@ func NewTeller(isMutate bool) *Teller {
 	}
 }
 
-func (t *Teller) DB() *gorm.DB {
-	return t.core.DB()
-}
-
 func (t *Teller) Stop() {
 	t.core.stop()
-}
-
-func (t *Teller) AppendLog(log TellerLog) {
-	t.core.appendLog(log)
 }
 
 func (t *Teller) InsertMutateState(txHash common.Hash, detail MutateDetail) {
@@ -85,16 +76,6 @@ func (t *Teller) IsMutate() bool {
 	return t.isMutate
 }
 
-func (t *Teller) CheckAndLog(caller common.Address, callee common.Address, input []byte, txHash common.Hash, txOrigin common.Address, blockNumber int64) {
-	ret := t.core.checkAndLog(caller, callee, input, txHash, txOrigin, blockNumber)
-	if ret {
-		// if len(input) > 4 {
-		// fmt.Printf("found on tx :%s %s\n", txHash.Hex(), hex.EncodeToString(input[:4]))
-		// }
-		t.isFound = true
-	}
-}
-
 func (t *Teller) ResetMutateMapList() {
 	t.core.setMutateMapList(nil)
 }
@@ -105,8 +86,4 @@ func (t *Teller) SetMutateMapList(mutateMapList *MutateMapList) {
 		t.core.setMutateMapList(mutateMapList)
 
 	}
-}
-
-func (t *Teller) EndTx(txHash common.Hash) {
-	t.core.endTx(txHash)
 }

@@ -2,7 +2,6 @@ package teller
 
 import (
 	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"math"
 	"math/big"
@@ -11,11 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
-	"gorm.io/gorm"
 )
-
-const LogPath = "/home/jonah1005/contract/tellerLog/"
 
 type WatchAddress struct {
 	Address   common.Address
@@ -44,7 +39,6 @@ type tellerCore struct {
 	Log       []TellerLog
 	mu        *sync.Mutex
 
-	db       *gorm.DB
 	logIndex int
 	logSize  int
 
@@ -60,11 +54,6 @@ type txInfo struct {
 
 func newTellerCore() *tellerCore {
 	once.Do(func() {
-		db, err := getDbConnection()
-		if err != nil {
-			panic(err)
-		}
-
 		logSize := 100
 		data := struct {
 			Data UniswapData `json:"data"`
@@ -89,7 +78,6 @@ func newTellerCore() *tellerCore {
 			Log:         make([]TellerLog, logSize),
 			logSize:     logSize,
 			logIndex:    0,
-			db:          db,
 			txInfoCache: make(map[string]txInfo),
 		}
 		globalTellerCore.loadConstantFunc()
@@ -108,103 +96,7 @@ func (w WatchFunction) Match(address common.Address, input []byte) (BreakPointTy
 	return 0, false
 }
 
-func (t *tellerCore) loadWatchAddressFromDB(signature string, limit int) {
-	var addresses []DBWatchAddress
-	result := t.db.Find(&addresses)
-	log.Info("[teller] insert %v addresses from db", result.RowsAffected)
-	getReserve := WatchFunction{
-		Signature: common.FromHex(signature),
-		Address:   make(map[string]BreakPointType),
-	}
-	for _, adr := range addresses {
-		var breakPointType BreakPointType
-		if adr.Type == "uniswap" {
-			breakPointType = BreakPointTypeUniswapGetReserve
-		} else if adr.Type == "sushiswap" {
-			breakPointType = BreakPointTypeSushiswapGetReserve
-		} else {
-			breakPointType = BreakPointTypeUndefined
-		}
-		getReserve.Address[common.HexToAddress(adr.Address).Hex()] = breakPointType
-	}
-	t.WatchList = append(t.WatchList, getReserve)
-}
-
-func (t *tellerCore) DB() *gorm.DB {
-	return t.db
-}
-
 func (t *tellerCore) stop() {
-
-	if t.logIndex == 0 {
-		return
-	}
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.db.Create(t.Log)
-	t.Log = make([]TellerLog, t.logSize)
-	t.logIndex = 0
-
-	sqlDB, err := t.db.DB()
-	if err != nil {
-		panic(err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		panic(err)
-	}
-}
-
-func (t *tellerCore) checkAndLog(
-	caller common.Address, callee common.Address, input []byte,
-	txHash common.Hash, txOrigin common.Address, blockNumber int64) bool {
-	isFound := false
-	for _, w := range t.WatchList {
-		if breakPointType, isMatch := w.Match(callee, input); isMatch {
-			if _, ok := t.txInfoCache[txHash.Hex()]; !ok {
-				t.txInfoCache[txHash.Hex()] = txInfo{
-					observedCount: 0,
-				}
-			}
-			txInfo := t.txInfoCache[txHash.Hex()]
-			t.appendLog(TellerLog{
-				TxHash:         txHash.Hex(),
-				Caller:         caller.Hex(),
-				Callee:         callee.Hex(),
-				Input:          hex.EncodeToString(input),
-				Origin:         txOrigin.Hex(),
-				BlockNumber:    blockNumber,
-				ObservedCount:  txInfo.observedCount,
-				BreakPointType: breakPointType,
-			})
-			txInfo.observedCount++
-			t.txInfoCache[txHash.Hex()] = txInfo
-			isFound = true
-		}
-	}
-	return isFound
-}
-
-func (t *tellerCore) endTx(txHash common.Hash) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if _, ok := t.txInfoCache[txHash.Hex()]; ok {
-		delete(t.txInfoCache, txHash.Hex())
-	}
-}
-
-func (t *tellerCore) appendLog(log TellerLog) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.logIndex < t.logSize {
-		t.Log[t.logIndex] = log
-		t.logIndex++
-	} else {
-		t.db.Create(t.Log)
-		t.Log = make([]TellerLog, t.logSize)
-		t.Log[0] = log
-		t.logIndex = 1
-	}
 }
 
 func DecodeHelper(contractAbi string, signature []byte, ret []byte) (interface{}, error) {
