@@ -161,7 +161,6 @@ func (t *tellerCore) mutateKyberGetExpectedRate(res []byte, caller common.Addres
 
 		args := inputArgs.([]interface{})
 		src, _ := args[0].(common.Address)
-		fmt.Println("kyber get rate src", src.Hex())
 		ok, rate := getRateFromSrc(src, t.mutateMapList)
 		if ok {
 

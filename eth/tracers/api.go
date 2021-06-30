@@ -20,7 +20,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -707,7 +706,6 @@ func (api *API) MutateTraceTransaction(ctx context.Context, hash common.Hash, co
 	var tellerMutateMap teller.MutateMapList
 	if mutateMapList != nil {
 		for _, mutateMap := range *mutateMapList {
-			fmt.Println("*mutatemap", *mutateMap)
 			tellerMutateMap = append(tellerMutateMap, teller.MutateMap{
 				Address: common.HexToAddress(*mutateMap.Address),
 				Rate:    *mutateMap.MutateRate,
@@ -761,8 +759,6 @@ func (api *API) MutateTraceTransaction(ctx context.Context, hash common.Hash, co
 			msg.AccessList(), msg.CheckNonce(),
 		)
 	}
-	fmt.Println("input Data", inputData)
-	fmt.Println("input", msg.Data(), hex.Dump(msg.Data()))
 	isMutate := true
 	if config == nil {
 		config = &TraceConfig{}
