@@ -17,7 +17,6 @@
 package vm
 
 import (
-	"fmt"
 	"hash"
 	"sync/atomic"
 
@@ -172,7 +171,6 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 					in.cfg.Tracer.CaptureState(in.evm, pcCopy, op, gasCopy, cost, callContext, in.returnData, in.evm.depth, err)
 				} else {
 					in.cfg.Tracer.CaptureFault(in.evm, pcCopy, op, gasCopy, cost, callContext, in.evm.depth, err)
-					fmt.Println("res", string(res))
 				}
 			}
 		}()
