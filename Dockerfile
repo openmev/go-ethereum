@@ -1,28 +1,27 @@
-# Support setting various labels on the final image
-ARG COMMIT=""
-ARG VERSION=""
-ARG BUILDNUM=""
+FROM golang:1.16-stretch AS builder
 
-# Build Geth in a stock Go builder container
-FROM golang:1.16-alpine as builder
+ENV DEBIAN_FRONTEND noninteractive
 
-RUN apk add --no-cache gcc musl-dev linux-headers git
+RUN apt-get update && apt-get install -y -qq apt-utils expect git git-extras software-properties-common \
+    inetutils-tools wget ca-certificates build-essential libssl-dev make
 
-ADD . /go-ethereum
-RUN cd /go-ethereum && go run build/ci.go install ./cmd/geth
+ADD . /go/src/github.com/ethereum/go-ethereum
+WORKDIR /go/src/github.com/ethereum/go-ethereum
 
-# Pull Geth into a second stage deploy alpine container
-FROM alpine:latest
+RUN GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o
 
-RUN apk add --no-cache ca-certificates
-COPY --from=builder /go-ethereum/build/bin/geth /usr/local/bin/
+FROM debian:buster-20210816 as final
 
-EXPOSE 8545 8546 30303 30303/udp
-ENTRYPOINT ["geth"]
+COPY --from=builder /go/src/github.com/ethereum/go-ethereum/build/bin /usr/local/bin
 
-# Add some metadata labels to help programatic image consumption
-ARG COMMIT=""
-ARG VERSION=""
-ARG BUILDNUM=""
+RUN apt-get update && apt-get install -y -qq iperf3 openssh-server iputils-ping tmux software-properties-common && apt-get clean -y -qq
 
-LABEL commit="$COMMIT" version="$VERSION" buildnum="$BUILDNUM"
+#RUN add-apt-repository ppa:ethereum/ethereum && apt-get update && \
+#    apt-get install -y solc
+
+WORKDIR /
+#ENV PATH /go-ethereum/build/bin:${PATH}
+EXPOSE 8080 8545 8180 3030 8546
+
+ENTRYPOINT ["/bin/bash"]
+#CMD exec $SHELL
