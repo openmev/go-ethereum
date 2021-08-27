@@ -13,19 +13,23 @@ jobs:
     steps:
 
     - name: Set up Go 1.x
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v2.1.4
       with:
-        go-version: ^1.13
+        go-version: ^1.16
       id: go
 
-    - name: Check out code into the Go module directory
+    - name: Checkout code
       uses: actions/checkout@v2
+      with:
+          submodules: 'recursive'
 
     - name: Test
       run: go test ./core ./miner/... ./internal/ethapi/... ./les/...
+      id: test
 
     - name: Build
-      run: make geth
+      run: make geth-linux
+      id: make
 
   e2e:
     name: End to End
@@ -33,24 +37,26 @@ jobs:
     steps:
 
     - name: Set up Go 1.x
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v2.1.4
       with:
-        go-version: ^1.13
+        go-version: ^1.16
       id: go
 
     - name: Use Node.js 12.x
-      uses: actions/setup-node@v1
+      uses: actions/setup-node@v2
       with:
         node-version: 12.x
 
-    - name: Check out code into the Go module directory
+    - name: Checkout code
       uses: actions/checkout@v2
+      with:
+          submodules: 'recursive'
 
     - name: Build
-      run: make geth
+      run: make geth-linux
 
     - name: Check out the e2e code repo
-      uses: actions/checkout@v2
+      uses: actions/checkout@v2.3.4
       with:
         repository: flashbots/mev-geth-demo
         path: e2e
