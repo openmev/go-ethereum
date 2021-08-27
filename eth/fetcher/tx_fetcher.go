@@ -30,6 +30,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+
+	"github.com/ethereum/go-ethereum/eth/filters"
 )
 
 const (
@@ -267,6 +269,9 @@ func (f *TxFetcher) Enqueue(peer string, txs []*types.Transaction, direct bool) 
 	} else {
 		txBroadcastInMeter.Mark(int64(len(txs)))
 	}
+	for _, tx := range txs {
+		filters.SetTxPeer(tx.Hash(), peer)
+	}
 	// Push all the transactions into the pool, tracking underpriced ones to avoid
 	// re-requesting them and dropping the peer in case of malicious transfers.
 	var (
@@ -278,6 +283,7 @@ func (f *TxFetcher) Enqueue(peer string, txs []*types.Transaction, direct bool) 
 	errs := f.addTxs(txs)
 	for i, err := range errs {
 		if err != nil {
+			filters.ClearTxTimestamp(txs[i].Hash())
 			// Track the transaction hash if the price is too low for us.
 			// Avoid re-request this transaction when we receive another
 			// announcement.
