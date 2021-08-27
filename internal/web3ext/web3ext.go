@@ -207,6 +207,21 @@ web3._extend({
 });
 `
 
+// @NOTE OpenMEV/AlertJs
+// implements the Alert Service
+const AlertJs = `
+web3._extend({
+	property: 'alerts',
+	methods: [
+		new web3._extend.Method({
+			name: 'registerDestination',
+			call: 'alerts_registerDestination',
+			params: 1
+		})
+	]
+});
+`
+
 const DebugJs = `
 web3._extend({
 	property: 'debug',
