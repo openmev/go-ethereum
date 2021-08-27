@@ -1,0 +1,63 @@
+name: pipeline
+on:
+  push:
+    tags:
+      - v*
+    branches:
+      - master
+      - main
+  pull_request:
+
+jobs:
+  golangci:
+    name: go-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2.3.4
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: latest
+          # Optional: golangci-lint command line arguments.
+          args: --issues-exit-code=0
+  ginkgo:
+    strategy:
+      matrix:
+        go-version: [1.16.x]
+        platform: [ubuntu-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+      with:
+          submodules: 'recursive'
+    - uses: actions/cache@v2
+      with:
+       path: |
+        ~/.cache/go-build
+        ~/go/pkg/mod
+       key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+       restore-keys: |
+          ${{ runner.os }}-go-
+    - name: Install Go
+      uses: actions/setup-go@v2.1.4
+      with:
+        go-version: ${{ matrix.go-version }}
+    - name: Install Ginkgo
+      run: go get -u github.com/onsi/ginkgo/ginkgo
+    - name: Test
+      run: ginkgo -cover ./...
+      id: ginkgo-coverage
+
+  semgrep:
+    name: semgrep-ci
+    runs-on: ubuntu-latest
+    if: (github.actor != 'dependabot[bot]')
+    steps:
+      - uses: actions/checkout@v2
+      - uses: returntocorp/semgrep-action@v1
+        id: semgrep-check
+        with:
+          config: >- # more at semgrep.dev/explore
+            p/security-audit
+            p/secrets
