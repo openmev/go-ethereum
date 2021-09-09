@@ -1,64 +1,72 @@
 name: Go
 
-on:
-  push:
-  pull_request:
-    branches: [ master ]
+on: [push, pull_request]
+
+defaults:
+  run:
+    shell: bash
+      
+env:
+  CI: true
+  FORCE_COLOR: 2
+
 
 jobs:
+  pipeline:
+    name: Node ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['14']
+        os: ['ubuntu-latest']
+
     steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+      id: checkout
+
+    - uses: actions/cache@v2
+      with:
+        # In order:
+        # * Module download cache
+        # * Build cache (Linux)
+        # * Build cache (Mac)
+        # * Build cache (Windows)
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+          ~/Library/Caches/go-build
+          %LocalAppData%\go-build
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
 
     - name: Set up Go 1.x
       uses: actions/setup-go@v2
       with:
-        go-version: ^1.13
-      id: go
+        go-version: ^1.15
+      id: golang
 
-    - name: Check out code into the Go module directory
+    - name: Build
+      run: make geth
+      id: make
+
+  test:
+    strategy:
+      matrix:
+        go-version: [1.15.x]
+        platform: ['ubuntu-latest']
+    runs-on: ${{ matrix.platform }}
+    steps:
+    - name: Checkout code
       uses: actions/checkout@v2
-
+    - name: Install Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: ${{ matrix.go-version }}
+    - name: Install Ginkgo
+      run: go get -u github.com/onsi/ginkgo/ginkgo
     - name: Test
-      run: go test ./core ./miner/... ./internal/ethapi/... ./les/...
-
-    - name: Build
-      run: make geth
-
-  e2e:
-    name: End to End
-    runs-on: ubuntu-latest
-    steps:
-
-    - name: Set up Go 1.x
-      uses: actions/setup-go@v2
-      with:
-        go-version: ^1.13
-      id: go
-
-    - name: Use Node.js 12.x
-      uses: actions/setup-node@v1
-      with:
-        node-version: 12.x
-
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v2
-
-    - name: Build
-      run: make geth
-
-    - name: Check out the e2e code repo
-      uses: actions/checkout@v2
-      with:
-        repository: flashbots/mev-geth-demo
-        path: e2e
-
-    - run: cd e2e && yarn install
-    - run: |
-        cd e2e
-        GETH=`pwd`/../build/bin/geth ./run.sh &
-        sleep 15
-        yarn run demo-simple
-        yarn run demo-contract
+      run: ginkgo -cover ./...
