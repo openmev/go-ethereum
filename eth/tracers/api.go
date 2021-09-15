@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"os"
 	"runtime"
 	"sync"
@@ -34,6 +35,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/teller"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -159,6 +161,7 @@ type TraceConfig struct {
 	Tracer  *string
 	Timeout *string
 	Reexec  *uint64
+	Mutate  *bool
 }
 
 // TraceCallConfig is the config for traceCall API. It holds one more
@@ -270,7 +273,7 @@ func (api *API) traceChain(ctx context.Context, start, end *types.Block, config 
 						TxIndex:   i,
 						TxHash:    tx.Hash(),
 					}
-					res, err := api.traceTx(localctx, msg, txctx, blockCtx, task.statedb, config)
+					res, err := api.traceTx(localctx, msg, txctx, blockCtx, task.statedb, config, nil)
 					if err != nil {
 						task.results[i] = &txTraceResult{Error: err.Error()}
 						log.Warn("Tracing failed", "hash", tx.Hash(), "block", task.block.NumberU64(), "err", err)
@@ -522,7 +525,7 @@ func (api *API) traceBlock(ctx context.Context, block *types.Block, config *Trac
 					TxIndex:   task.index,
 					TxHash:    txs[task.index].Hash(),
 				}
-				res, err := api.traceTx(ctx, msg, txctx, blockCtx, task.statedb, config)
+				res, err := api.traceTx(ctx, msg, txctx, blockCtx, task.statedb, config, nil)
 				if err != nil {
 					results[task.index] = &txTraceResult{Error: err.Error()}
 					continue
@@ -688,6 +691,87 @@ func containsTx(block *types.Block, hash common.Hash) bool {
 	return false
 }
 
+// MutateMapList is the list of mutate map
+type MutateMapList []*MutateMapConfig
+
+// MutateMapConfig builds a mutate map
+type MutateMapConfig struct {
+	Address    *string
+	MutateRate *string
+}
+
+// MutateTraceTransaction returns the structured logs created during the execution of EVM
+// and returns them as a JSON object.
+func (api *API) MutateTraceTransaction(ctx context.Context, hash common.Hash, config *TraceConfig, mutateMapList *MutateMapList, inputData *string) (interface{}, error) {
+	var tellerMutateMap teller.MutateMapList
+	if mutateMapList != nil {
+		for _, mutateMap := range *mutateMapList {
+			tellerMutateMap = append(tellerMutateMap, teller.MutateMap{
+				Address: common.HexToAddress(*mutateMap.Address),
+				Rate:    *mutateMap.MutateRate,
+			})
+		}
+	}
+	_, blockHash, blockNumber, index, err := api.backend.GetTransaction(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+	// It shouldn't happen in practice.
+	if blockNumber == 0 {
+		return nil, errors.New("genesis is not traceable")
+	}
+	reexec := defaultTraceReexec
+	if config != nil && config.Reexec != nil {
+		reexec = *config.Reexec
+	}
+	block, err := api.blockByNumberAndHash(ctx, rpc.BlockNumber(blockNumber), blockHash)
+	if err != nil {
+		return nil, err
+	}
+	msg, vmctx, statedb, err := api.backend.StateAtTransaction(ctx, block, int(index), reexec)
+	if err != nil {
+		return nil, err
+	}
+	if inputData != nil && *inputData != "" {
+		// tx, _,_,_, err := api.backend.GetTransaction(ctx, hash)
+		// if err != nil {
+		// 	return nil, err
+		// }
+		msg = types.NewMessage(
+			msg.From(), msg.To(), msg.Nonce(),
+			msg.Value(),
+			uint64(17000000),
+			// msg.Gas(),
+			big.NewInt(0),
+			// msg.GasPrice(),
+			common.FromHex(*inputData),
+			msg.AccessList(), msg.CheckNonce(),
+		)
+	} else {
+		msg = types.NewMessage(
+			msg.From(), msg.To(), msg.Nonce(),
+			msg.Value(),
+			uint64(17000000),
+			// msg.Gas(),
+			big.NewInt(0),
+			// msg.GasPrice(),
+			msg.Data(),
+			msg.AccessList(), msg.CheckNonce(),
+		)
+	}
+	isMutate := true
+	if config == nil {
+		config = &TraceConfig{}
+	}
+	config.Mutate = &isMutate
+	txctx := &txTraceContext{
+		index: int(index),
+		hash:  hash,
+		block: blockHash,
+	}
+	return api.traceTx(ctx, msg, txctx, vmctx, statedb, config, &tellerMutateMap)
+}
+
 // TraceTransaction returns the structured logs created during the execution of EVM
 // and returns them as a JSON object.
 func (api *API) TraceTransaction(ctx context.Context, hash common.Hash, config *TraceConfig) (interface{}, error) {
@@ -716,7 +800,7 @@ func (api *API) TraceTransaction(ctx context.Context, hash common.Hash, config *
 		TxIndex:   int(index),
 		TxHash:    hash,
 	}
-	return api.traceTx(ctx, msg, txctx, vmctx, statedb, config)
+	return api.traceTx(ctx, msg, txctx, vmctx, statedb, config, nil)
 }
 
 // TraceCall lets you trace a given eth_call. It collects the structured logs
@@ -770,13 +854,13 @@ func (api *API) TraceCall(ctx context.Context, args ethapi.TransactionArgs, bloc
 			Reexec:    config.Reexec,
 		}
 	}
-	return api.traceTx(ctx, msg, new(Context), vmctx, statedb, traceConfig)
+	return api.traceTx(ctx, msg, new(Context), vmctx, statedb, traceConfig, nil)
 }
 
 // traceTx configures a new tracer according to the provided configuration, and
 // executes the given message in the provided environment. The return value will
 // be tracer dependent.
-func (api *API) traceTx(ctx context.Context, message core.Message, txctx *Context, vmctx vm.BlockContext, statedb *state.StateDB, config *TraceConfig) (interface{}, error) {
+func (api *API) traceTx(ctx context.Context, message core.Message, txctx *Context, vmctx vm.BlockContext, statedb *state.StateDB, config *TraceConfig, mutateMapList *teller.MutateMapList) (interface{}, error) {
 	// Assemble the structured logger or the JavaScript tracer
 	var (
 		tracer    vm.Tracer
@@ -813,8 +897,18 @@ func (api *API) traceTx(ctx context.Context, message core.Message, txctx *Contex
 		tracer = vm.NewStructLogger(config.LogConfig)
 	}
 	// Run the transaction with tracing enabled.
-	vmenv := vm.NewEVM(vmctx, txContext, statedb, api.backend.ChainConfig(), vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
+	// vmenv := vm.NewEVM(vmctx, txContext, statedb, api.backend.ChainConfig(), vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
+	vmenv := vm.NewTellerEVM(vmctx, txContext, statedb, api.backend.ChainConfig(), vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true}, true)
+	vmenv.Teller.SetMutateMapList(mutateMapList)
 
+	if config != nil && config.Mutate != nil && *config.Mutate {
+		vmenv = vm.NewTellerEVM(vmctx, txContext, statedb, api.backend.ChainConfig(), vm.Config{Debug: true, Tracer: tracer}, true)
+		vmenv.Teller.SetMutateMapList(mutateMapList)
+	} else {
+		// Run the transaction with tracing enabled.
+		vmenv = vm.NewEVM(vmctx, txContext, statedb, api.backend.ChainConfig(), vm.Config{Debug: true, Tracer: tracer})
+
+	}
 	// Call Prepare to clear out the statedb access list
 	statedb.Prepare(txctx.TxHash, txctx.TxIndex)
 
