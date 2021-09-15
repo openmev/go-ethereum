@@ -208,7 +208,7 @@ Example:
   ]
 }
 ```
-When applying this, using a reward of `0x80`
+When applying this, using a reward of `0x08`
 Output:
 ```json
 {
