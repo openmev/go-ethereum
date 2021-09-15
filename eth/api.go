@@ -324,6 +324,15 @@ type BadBlockArgs struct {
 	RLP   string                 `json:"rlp"`
 }
 
+func (api *PrivateDebugAPI) GetState(blockNum uint64) (interface{}, error) {
+	rootBlock := api.eth.blockchain.GetBlockByNumber(blockNum)
+	statedb, err := api.eth.blockchain.StateAt(rootBlock.Root())
+	if err != nil {
+		return rootBlock.Root(), fmt.Errorf("failed to retrieve first block %v\n %v", rootBlock.Root().Hex(), err)
+	}
+	return statedb.IntermediateRoot(false).Hex(), nil
+}
+
 // GetBadBlocks returns a list of the last 'bad blocks' that the client has seen on the network
 // and returns them as a JSON list of block-hashes
 func (api *PrivateDebugAPI) GetBadBlocks(ctx context.Context) ([]*BadBlockArgs, error) {
@@ -342,7 +351,7 @@ func (api *PrivateDebugAPI) GetBadBlocks(ctx context.Context) ([]*BadBlockArgs, 
 		} else {
 			blockRlp = fmt.Sprintf("0x%x", rlpBytes)
 		}
-		if blockJSON, err = ethapi.RPCMarshalBlock(block, true, true, api.eth.engine); err != nil {
+		if blockJSON, err = ethapi.RPCMarshalBlock(block, true, true); err != nil {
 			blockJSON = map[string]interface{}{"error": err.Error()}
 		}
 		results = append(results, &BadBlockArgs{
