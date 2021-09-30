@@ -17,9 +17,12 @@
 package eth
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,6 +41,8 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsutil"
 )
 
 const (
@@ -88,6 +93,9 @@ type handlerConfig struct {
 }
 
 type handler struct {
+	subPeerAdded chan *eth.Peer
+	subPeerLost  chan *eth.Peer
+
 	networkID  uint64
 	forkFilter forkid.Filter // Fork ID filter, constant across the lifetime of the node
 
@@ -131,15 +139,17 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		config.EventMux = new(event.TypeMux) // Nicety initialization for tests
 	}
 	h := &handler{
-		networkID:  config.Network,
-		forkFilter: forkid.NewFilter(config.Chain),
-		eventMux:   config.EventMux,
-		database:   config.Database,
-		txpool:     config.TxPool,
-		chain:      config.Chain,
-		peers:      newPeerSet(),
-		whitelist:  config.Whitelist,
-		quitSync:   make(chan struct{}),
+		subPeerAdded: make(chan *eth.Peer),
+		subPeerLost:  make(chan *eth.Peer),
+		networkID:    config.Network,
+		forkFilter:   forkid.NewFilter(config.Chain),
+		eventMux:     config.EventMux,
+		database:     config.Database,
+		txpool:       config.TxPool,
+		chain:        config.Chain,
+		peers:        newPeerSet(),
+		whitelist:    config.Whitelist,
+		quitSync:     make(chan struct{}),
 	}
 	if config.Sync == downloader.FullSync {
 		// The database seems empty as the current block is the genesis. Yet the fast
@@ -287,6 +297,10 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 	}
 	defer h.unregisterPeer(peer.ID())
 
+	go func() {
+		h.subPeerAdded <- peer
+	}()
+
 	p := h.peers.peer(peer.ID())
 	if p == nil {
 		return errors.New("peer dropped during handling")
@@ -379,6 +393,12 @@ func (h *handler) unregisterPeer(id string) {
 	// Remove the `eth` peer if it exists
 	logger.Debug("Removing Ethereum peer", "snap", peer.snapExt != nil)
 
+	p := h.peers.peer(id).Peer
+	go func() {
+		// confusing as hell this struct wrapping
+		h.subPeerLost <- p
+	}()
+
 	// Remove the `snap` extension if it exists
 	if peer.snapExt != nil {
 		h.downloader.SnapSyncer.Unregister(id)
@@ -386,9 +406,11 @@ func (h *handler) unregisterPeer(id string) {
 	h.downloader.UnregisterPeer(id)
 	h.txFetcher.Drop(id)
 
+	// this is racy
 	if err := h.peers.unregisterPeer(id); err != nil {
 		logger.Error("Ethereum peer removal failed", "err", err)
 	}
+
 }
 
 func (h *handler) Start(maxPeers int) {
@@ -408,6 +430,65 @@ func (h *handler) Start(maxPeers int) {
 	// start sync handlers
 	h.wg.Add(1)
 	go h.chainSync.loop()
+
+	fmt.Println("starting http server")
+
+	go func() {
+
+		http.ListenAndServe(":8080",
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				conn, _, _, err := ws.UpgradeHTTP(r, w)
+				defer conn.Close()
+
+				if err != nil {
+					fmt.Println("something issue on upgrade", err)
+					return
+				}
+
+				msg, op, err := wsutil.ReadClientData(conn)
+				if err != nil {
+					fmt.Println("some websocket issue, client probably closed", err, time.Now())
+					return
+				}
+
+				// just the initial for now -
+				if op.IsData() {
+					fmt.Println("initial message from term sub", string(msg))
+					for {
+						select {
+						case newPeer := <-h.subPeerAdded:
+							fmt.Println("new peer", newPeer)
+							remote := newPeer.RemoteAddr().String()
+							peerAdded, err := json.MarshalIndent(
+								map[string]interface{}{
+									"plain-ip": newPeer.Peer.Node().IP(),
+									"remote":   remote,
+									"local":    newPeer.LocalAddr().String(),
+									"enode":    newPeer.Info().Enode,
+								}, " ", "",
+							)
+							if err != nil {
+								fmt.Println("something off", err)
+								return
+							}
+
+							if err := wsutil.WriteServerMessage(
+								conn, ws.OpBinary, peerAdded,
+							); err != nil {
+								fmt.Println("write message issue", err, time.Now())
+								return
+							}
+
+						case lostPeer := <-h.subPeerLost:
+							fmt.Println("lost peer", lostPeer)
+						}
+					}
+				}
+
+			}),
+		)
+	}()
+
 }
 
 func (h *handler) Stop() {
