@@ -858,9 +858,21 @@ func (api *API) traceTx(ctx context.Context, message core.Message, txctx *Contex
 				return nil, err
 			}
 		}
-		// Constuct the JavaScript tracer to execute with
-		if tracer, err = New(*config.Tracer, txctx); err != nil {
-			return nil, err
+		
+		if *config.Tracer == "goCallTracer" {
+			tracer = tracers.NewCallTracer(statedb)
+		} else {
+			// Constuct the JavaScript tracer to execute with
+			if tracer, err = tracers.New(*config.Tracer); err != nil {
+				return nil, err
+			}
+			// Handle timeouts and RPC cancellations
+			deadlineCtx, cancel := context.WithTimeout(context.Background(), timeout)
+			go func() {
+				<-deadlineCtx.Done()
+				tracer.(*tracers.Tracer).Stop(errors.New("execution timeout"))
+			}()
+			defer cancel()
 		}
 		// Handle timeouts and RPC cancellations
 		deadlineCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -905,6 +917,10 @@ func (api *API) traceTx(ctx context.Context, message core.Message, txctx *Contex
 		}, nil
 
 	case *Tracer:
+		return tracer.GetResult()
+	
+	// @return call_tracer
+	case tracers.TracerResult:
 		return tracer.GetResult()
 
 	default:
