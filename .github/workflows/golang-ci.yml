@@ -1,0 +1,58 @@
+name: golang-ci
+on: [push,pull_request]
+jobs:
+
+  test:
+    permissions:
+      contents: read
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/setup-go@v2
+      with:
+        go-version: 1.17
+
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 50 # Need git history for testing.
+
+    # https://github.com/actions/cache/blob/master/examples.md#go---modules
+    - name: Cache Go Modules
+      id: cache
+      uses: actions/cache@v2
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    - name: Download Go Modules
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: go mod download
+
+    - name: Build
+      run: make geth-linux-amd64
+      
+    - name: Test
+      id: test-geth
+      run: go test ./core ./miner/...
+
+    - name: Test
+      id: test-openmev
+      run: go test ./core ./miner/... ./internal/ethapi/... ./les/...
+ 
+    - name: gobenchdata publish
+      uses: bobheadxi/gobenchdata@v1
+      with:
+        PRUNE_COUNT: 30
+        GO_TEST_FLAGS: -cpu 1,2
+        PUBLISH: true
+        PUBLISH_BRANCH: gh-pages
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+    - name: Test
+      run: go test -v -race -coverpkg=./... -coverprofile=coverage.txt ./...
+
+    - uses: codecov/codecov-action@v2
