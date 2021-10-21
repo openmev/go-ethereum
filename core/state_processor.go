@@ -174,9 +174,9 @@ func applyTransactionWithResult(msg types.Message, config *params.ChainConfig, b
 	}
 
 	// Set the receipt logs and create the bloom filter.
-	receipt.Logs = statedb.GetLogs(tx.Hash())
+	receipt.Logs = statedb.GetLogs(tx.Hash(), header.Hash())
 	receipt.Bloom = types.CreateBloom(types.Receipts{receipt})
-	receipt.BlockHash = statedb.BlockHash()
+	receipt.BlockHash = header.Hash()
 	receipt.BlockNumber = header.Number
 	receipt.TransactionIndex = uint(statedb.TxIndex())
 	return receipt, result, err
@@ -198,7 +198,7 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 }
 
 func ApplyTransactionWithResult(config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, header *types.Header, tx *types.Transaction, usedGas *uint64, cfg vm.Config) (*types.Receipt, *ExecutionResult, error) {
-	msg, err := tx.AsMessage(types.MakeSigner(config, header.Number))
+	msg, err := tx.AsMessage(types.MakeSigner(config, header.Number), header.BaseFee)
 	if err != nil {
 		return nil, nil, err
 	}

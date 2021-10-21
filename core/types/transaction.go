@@ -640,11 +640,3 @@ type MevBundle struct {
 	MaxTimestamp      uint64
 	RevertingTxHashes []common.Hash
 }
-
-type MevBundle struct {
-	Txs               Transactions
-	BlockNumber       *big.Int
-	MinTimestamp      uint64
-	MaxTimestamp      uint64
-	RevertingTxHashes []common.Hash
-}
