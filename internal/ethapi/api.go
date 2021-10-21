@@ -2153,14 +2153,23 @@ type BundleAPI struct {
 	b     Backend
 	chain *core.BlockChain
 }
-	// SendBundleArgs represents the arguments for a call.
-	type CallBundleArgs struct {
+// NewBundleAPI creates a new Tx Bundle API instance.
+func NewBundleAPI(b Backend, chain *core.BlockChain) *BundleAPI {
+	return &BundleAPI{b, chain}
+}
+
+// SendBundleArgs represents the arguments for a call.
+type CallBundleArgs struct {
 	Txs                    []hexutil.Bytes       `json:"txs"`
 	BlockNumber            rpc.BlockNumber       `json:"blockNumber"`
 	StateBlockNumberOrHash rpc.BlockNumberOrHash `json:"stateBlockNumber"`
 	Coinbase               *string               `json:"coinbase"`
 	Timestamp              *uint64               `json:"timestamp"`
 	Timeout                *int64                `json:"timeout"`
+	GasLimit               *uint64               `json:"gasLimit"`
+	Difficulty             *big.Int              `json:"difficulty"`
+	BaseFee                *big.Int              `json:"baseFee"`
+	SimulationLogs				 bool								 `json:"simulationLogs"`
 }
 
 	// CallBundle will simulate a bundle of transactions at the top of a given block
@@ -2296,12 +2305,17 @@ type BundleAPI struct {
 	ret["bundleHash"] = "0x" + common.Bytes2Hex(bundleHash.Sum(nil))
 	return ret, nil
 	}
+
+/*
 	// NewBundleAPI creates a new Tx Bundle API instance.
-	func NewBundleAPI(b Backend, chain *core.BlockChain) *BundleAPI {
+func NewBundleAPI(b Backend, chain *core.BlockChain) *BundleAPI {
 	return &BundleAPI{b, chain}
 }
+*/
+
+/*
 	// SendBundleArgs represents the arguments for a call.
-/*	type CallBundleArgs struct {
+	type CallBundleArgs struct {
 	Txs                    []hexutil.Bytes       `json:"txs"`
 	BlockNumber            rpc.BlockNumber       `json:"blockNumber"`
 	StateBlockNumberOrHash rpc.BlockNumberOrHash `json:"stateBlockNumber"`
@@ -2313,6 +2327,7 @@ type BundleAPI struct {
 	BaseFee                *big.Int              `json:"baseFee"`
 	SimulationLogs         bool                  `json:"simulationLogs"`
 	}
+
 */
 	func (s *BundleAPI) CallBundle(ctx context.Context, args CallBundleArgs) (map[string]interface{}, error) {
 	if len(args.Txs) == 0 {
@@ -2443,6 +2458,9 @@ type BundleAPI struct {
 	dst := make([]byte, hex.EncodedLen(len(result.Return())))
 	hex.Encode(dst, result.Return())
 	jsonResult["value"] = "0x" + string(dst)
+	}
+		if args.SimulationLogs == true {
+			jsonResult["logs"] = receipt.Logs
 }
 	coinbaseDiffTx := new(big.Int).Sub(state.GetBalance(coinbase), coinbaseBalanceBeforeTx)
 	jsonResult["coinbaseDiff"] = coinbaseDiffTx.String()
@@ -2466,9 +2484,6 @@ type BundleAPI struct {
 	ret["bundleHash"] = "0x" + common.Bytes2Hex(bundleHash.Sum(nil))
 	return ret, nil
 }
-	ret["bundleHash"] = "0x" + common.Bytes2Hex(bundleHash.Sum(nil))
-	return ret, nil
-	}
 
 	// Recovers the Ethereum address of the trusted relay that signed the megabundle.
 	func RecoverRelayAddress(args SendMegabundleArgs) (common.Address, error) {
